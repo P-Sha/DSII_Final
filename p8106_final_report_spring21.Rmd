@@ -37,21 +37,22 @@ library(nlme)
 library(AppliedPredictiveModeling)
 library(dplyr)
 library(scales)
+library(pROC)
 ```
 
 # Introduction
 
-This project aimed to study any association between diabetes and several covariates in participants ages 1 and older, using NHANES data, and selecting an optimal prediction model among linear, non-linear, parametric and non-parametric models. The main objective was building a binary classification model with supervised learning. Certain factors of special interest were any association with participant’s race, age, cholesterol and lifestyle factors, among others. Data was extracted for the year 2013 - 2014 from the cdc.gov website, https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2013. Specifically, association was assessed between diabetes and the following covariates:
+This project aims to study any association between diabetes and several covariates in participants ages 1 and older, using NHANES data, and selecting an optimal prediction model among linear, non-linear, parametric and non-parametric models. The main objective is building a binary classification model with supervised learning. Certain factors of special interest were any association with participant’s race, age, cholesterol and lifestyle factors, among others. Data was extracted for the year 2013 - 2014 from the cdc.gov website, https://wwwn.cdc.gov/nchs/nhanes/continuousnhanes/default.aspx?BeginYear=2013. 
+
+## Data description
+
+Specifically, association was assessed between diabetes and the following covariates:
 
 * Gender: Participant's gender (male or female)
 * Age: Age at screening, with possible values of 0 to 79, or 80+ (years)
 * Race: 6 categories for race include Mexican American, other Hispanic, White, Black, Asian and other. 
 * bmi: body mass index (kg/m^2) 
 * hdl: High-density lipoprotein (mg/dL)
-* ldl: Low-density lipoprotein (mg/dL)
-* Triglycerides (mg/dL): laboratory test results for serum levels of triglycerides
-* Insulin (uU/mL): measured using serum insulin methods
-* Glucose (mg/dL): plasma glucose value measured 2 hours after calibrated oral dose
 * Blood pressure (mm Hg): Both systolic and diastolic, first-round measurements
 * waist: Waist circumference measurement (cm)
 * Sedentary activity (lifestyle, minutes): time spent sitting in a given day, not including sleeping.
@@ -60,11 +61,15 @@ This project aimed to study any association between diabetes and several covaria
 * Depression: severity on a scale of 0 to 3 treated as a continuous variable, with 0 as not at all depressed
 * Sleep: amount of sleep in hours on a given night on weekdays or workdays
 
-The outcome of "diabetes" dependent-variable was based on classification of the participants into two groups of those with diabetes and those who did not have diabetes. Individuals answered the question "other than during pregnancy, have you ever been told by a doctor or health professional that you have diabetes or sugar diabetes?", and were classified as having diabetes if they answered yes.
+The outcome of "diabetes" dependent-variable was based on classification of the participants into two groups of those with diabetes and those who did not have diabetes. Individuals answered the question "other than during pregnancy, have you ever been told by a doctor or health professional that you have diabetes or sugar diabetes?", and were classified as having diabetes if they answered yes. 
+
+## Motivation
 
 Motivation was provided by the fact that diabetes is one of the major leading causes of death in the United States. As stated by the CDC site's National Diabetes Statistics Report of 2020, 34.2 million Americans are diabetic, while 7.3 million were undiagnosed. Furthermore, increase in type 2 diabetes among children is a growing concern according to the CDC. With prevalence of diabetes and prediabetes on the rise, it was of interest to find factors that might affect the diabetes status. Later years post-2013 were tried for the data, however were unavailable for the variables of interest possibly due to continuing updates. 
 
-After extracting and merging the necessary files by participant’s Id number, variables of interest were retained in a dataframe. Gender, race, education level, marital status  and the response variable Diabetes were converted to factors from numeric data type. Missing entries for the response of diabetes status were removed. 185 “borderline “ reported cases, 5 with “don’t know” responses and 1 with “refused” response were also removed given the small scale of these categories, which accounted for less than 2% of the data, and in order to focus on the majority of binary responses of presence or absence of diabetes. The cleaned dataset contained 9,578 observations of 15 variables, including the binary outcome variable diabetes. 
+## Data cleaning
+
+After extracting and merging the necessary files by participant’s Id number, variables of interest were retained in a dataframe. Gender, race, education level, marital status  and the response variable Diabetes were converted to factors from numeric data type. Missing entries for the response of diabetes status were removed. 185 “borderline “ reported cases, 5 with “don’t know” responses and 1 with “refused” response were also removed given the small scale of these categories, which accounted for less than 2% of the data, and in order to focus on the majority of binary responses of presence or absence of diabetes. The cleaned dataset contained 9,578 observations of 18 variables, including the binary outcome variable diabetes. 
 
 ```{r}
 data_files <- nhanes_load_data(file_name = "DIQ_H", year = "2013-2014")
@@ -84,8 +89,8 @@ data_files <- data_files %>%
 raw_data <- data_files %>% 
   select(SEQN, RIAGENDR, RIDAGEYR, RIDRETH3, BMXBMI, LBDHDD, LBDLDL, LBXTR, LBXIN, LBXGLT, BPXSY1, BPXDI1, BMXWAIST,  PAD680, DMDEDUC2, DMDMARTL, DPQ020, SLD010H,  DIQ010) 
 
-raw_data <- raw_data[raw_data$DIQ010 != 3 & raw_data$DIQ010 != 7 & raw_data$DIQ010 != 9, ] %>%  mutate(RIAGENDR = as_factor(RIAGENDR), RIDRETH3 = as_factor(RIDRETH3),DMDEDUC2 = as_factor(DMDEDUC2), DMDMARTL = as_factor(DMDMARTL), DIQ010 = as_factor(DIQ010) ) %>% 
-  drop_na(DIQ010) 
+raw_data <- raw_data[raw_data$DIQ010 != 3 & raw_data$DIQ010 != 7 & raw_data$DIQ010 != 9, ] %>%  mutate(RIAGENDR = as_factor(RIAGENDR), RIDRETH3 = as_factor(RIDRETH3),DMDEDUC2 = as_factor(DMDEDUC2), DMDMARTL = as_factor(DMDMARTL), DIQ010 = as_factor(DIQ010)) %>% 
+  drop_na(DIQ010)
  
  colnames(raw_data) <- c("ID", "gender", "age", "race", "bmi", "hdl", "ldl", "triglyceride", "insulin", "glucose", "bp_systolic","bp_diastolic", "waist","lifestyle", "education", "married", "depression", "sleep", "diabetes") 
  
@@ -107,9 +112,11 @@ st_options(plain.ascii = FALSE,
            subtitle.emphasis = FALSE)      
 
 dfSummary(raw_data[,-1], valid.col = FALSE)
+
+raw_data <- raw_data[-c(7:10)]
 ```
 
-As noted above in the summary table, several of the variables for laboratory data had high missing values. Given the size of the dataset with 9,578 observations, and the potential significance of these variables as indicated in previous studies, the ldl, triglyceride, insulin and 2hr glucose-test outcomes were retained.  
+As noted above in the summary table, several of the variables for laboratory data had high missing values. The variables ldl, triglyceride, insulin and 2hr glucose-test had close to 70% of the data missing. In an effort to retain a large enough sample size, the four variables were not retained for further analysis in this project.  
 
 ## Density plots
 
@@ -125,7 +132,7 @@ raw_data <- raw_data %>%
   select(gender, everything()) %>% 
   select(ID, everything())
 
-featurePlot(x = raw_data[, 6:18], 
+featurePlot(x = raw_data[, 6:14], 
             y = raw_data$diabetes,
             scales = list(x = list(relation = "free"), 
                           y = list(relation = "free")),
@@ -133,7 +140,7 @@ featurePlot(x = raw_data[, 6:18],
             auto.key = list(columns = 2))
 ```
 
-Density plots of several numeric covariates showed differences in distributions. Plots of 2 hour glucose tolerance where the participants after the initial fasting were asked to drink a calibrated dose of glucose solution and tested after 2 hours, systolic blood pressure, waist circumference measurement, age, and body mass index showed significant differences between the two groups of participants, those with diabetes and those without. Most significant difference seemed to be among different age groups, with density curve of responses with no diabetes showing right-skewness, and those with diabetes skewed to the left along with a strong shift towards higher age. 
+Density plots of several numeric covariates showed differences in distributions of the two classes. Plots of systolic blood pressure, waist circumference measurement, age, and body mass index seemed significantly different between those with diabetes and those without. Most significant difference seemed to be among different age groups, with density curve of responses with no diabetes showing right-skewness, and those with diabetes skewed to the left along with a strong shift towards higher age. 
 
 ## Bar plots
 
@@ -179,9 +186,31 @@ diabetes_married = ggplot(raw_data,
 
 Bar plots were analyzed for categorical variables gender, race ,education level, and marital status. Presence of diabetes did not seem to be gender-dependent, and with slight differences based on education level. Proportion of positive diabetes cases did seem to vary among different races, and based on marital status. There seemed to be significantly higher proportion of non-diabetics among individuals who were never-married or divorced.
 
+Finally, paired partition plots were also examined for several variables using training data, to analyze misclassification rate. Methods using linear discriminant analysis, and non-linear boundaries such as quadratic discriminant analysis and Naive Bayes method were used, giving similar results in terms of error rates. Shown below is partition plots using Naive Bayes method for paired visuals on age, bmi, hdl, systolic blood pressure, and waist.
+
+## Partition plots
+
+```{r}
+set.seed(1)
+rowTrain <- createDataPartition(y = raw_data$diabetes,
+                                p = 0.7,
+                                list = FALSE)
+
+# Exploratory analysis: LDA/QDA/NB based on every combination of two variables
+
+# klaR::partimat(diabetes ~ age + bmi +  hdl + bp_systolic + waist, 
+#        data = raw_data, subset = rowTrain, method = "lda")
+
+# klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
+#         data = raw_data, subset = rowTrain, method = "qda")
+
+ klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
+          data = raw_data, subset = rowTrain, method = "naiveBayes")
+```
+
 ## Missing data
 
-Certain variables with high proportion of missing data were retained. The dataset had close to 60% of missing values for the 4 variables which were considered significant for the given response. Assuming that the data was missing at random, and that single imputation might lead to bias and might not preserve relationships between variables; for those reasons imputation was not considered and the missing values were removed. The final sample consisted of 1,564 participants.
+ The four Variables with high proportion of missing data, most of which were close to 70%  were removed. For the remaining variables with missing values, most were close to 25%, except martial status, education and depression level, which were approximately 40% missing. Assuming that the data was missing at random, and that single imputation might lead to bias and might not preserve relationships between variables; for those reasons imputation was not considered and the missing values were removed. The final sample consisted of 4,246 participants, still a fairly large dataset.
 
 ```{r}
 # Missing data omitted
@@ -192,11 +221,11 @@ trainRows <- createDataPartition(diabetes_data$diabetes, p = 0.8, list = FALSE)
 
 
 # training data
-x <- diabetes_data[trainRows ,-c(1, 19)]
+x <- diabetes_data[trainRows ,-c(1, 15)]
 y <- diabetes_data$diabetes[trainRows]
 
 # test data
-x2 <- diabetes_data[-trainRows ,-c(1, 19)]
+x2 <- diabetes_data[-trainRows ,-c(1, 15)]
 y2 <- diabetes_data$diabetes[-trainRows]
 ```
 
