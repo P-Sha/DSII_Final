@@ -260,6 +260,8 @@ model.nb <- train(x = x,
 plot(model.nb)
 ```
 
+## 
+
 ## Model comparison
 
 ```{r}

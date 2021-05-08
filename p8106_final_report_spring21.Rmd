@@ -231,13 +231,17 @@ y2 <- diabetes_data$diabetes[-trainRows]
 
 # Models
 
-## Linear models
+## Methods
 
-## Non-linear models
+Several model-building techniques were used to predict the risk of diabetes using the 15 variables associated with it. Gender, age, race, bmi, hdl, systolic and diastolic blood pressure, waist circumference, lifestyle, education, marital status, depression and sleep were used as the predictor variables in the model building process. Given that the outcome was binary, generalized linear and non-linear methods such as logistic regression and discriminant analysis were tried, along with ensemble methods for trees, and the SVM (support vector machines) linear and non-linear boundary methods. 
 
-## Ensemble methods
+Due to ease of interpretability and the binary nature of the outcome, glm (logistic regression) and penalized logistic regression models were fitted.
 
-## Support vector machines
+-------------- GLM/Penalized model building  -----------------------------
+
+Generalized additive model (GAM) was considered but not used due to the length of time for its execution. Non-linear MARS model, with similar performance to GAM, was retained. Various combinations for tuning grid were tried to get its optimal performance.    
+
+While no assumptions are needed for the predictors in linear logistic model, for discriminant analysis it is assumed that the predictors follow a normal  distribution within each group of response, and that the variance-covariance matrix for response classes are the same for linear model (LDA), or could be different for non-linear QDA. Since four of the covariates in the dataset were categorical, these models were tried but excluded from analysis. Under the assumption that features are independent within each class, Naives Bayes method (NB) was used due to its ability to handle mixed covariates, and due to its slightly better performance than LDA and QDA in terms of area under the ROC (receiver operating charactersitic curve).
 
 ## Model comparison
 
@@ -246,6 +250,7 @@ y2 <- diabetes_data$diabetes[-trainRows]
 ## Model prediction performance
 
 ## Limitations
+
 
 # Conclusion
 
