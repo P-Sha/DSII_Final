@@ -10,25 +10,26 @@ output: html_document
 library(tidyverse)
 library(RNHANES)
 library(caret)
+library(rpart)
+library(rpart.plot)
 #library(glmnet)
 #library(pls)
 #library(splines)
 #library(mgcv)
 #library(pdp)
 #library(earth)
-#library(ggplot2)
 #library(lasso2)
 #library(mlbench)
 #library(pROC)
 #library(vip)
 #library(AppliedPredictiveModeling)
 #library(qwraps2)
-#library(arsenal)
-#library(dplyr)
+library(arsenal)
 #library(HH)
 #library(summarytools)
 #library(leaps)
-
+library(ranger)
+library(gbm)
 
 knitr::opts_chunk$set(echo = TRUE)
 ```
@@ -49,7 +50,7 @@ data_files <- data_files %>%
   left_join(nhanes_load_data("PAQ_H", "2013-2014"), by = "SEQN") %>% 
   left_join(nhanes_load_data("DPQ_H", "2013-2014"), by = "SEQN") %>% 
   left_join(nhanes_load_data("SLQ_H", "2013-2014"), by = "SEQN")
-
+  
 raw_data <- data_files %>% 
   select(SEQN, RIAGENDR, RIDAGEYR, RIDRETH3, BMXBMI, LBDHDD, LBDLDL, LBXTR, LBXIN, LBXGLT, BPXSY1, BPXDI1, BMXWAIST,  PAD680, DMDEDUC2, DMDMARTL, DPQ020, SLD010H,  DIQ010) 
 
@@ -58,27 +59,56 @@ raw_data <- raw_data[raw_data$DIQ010 != 3 & raw_data$DIQ010 != 7 & raw_data$DIQ0
  
  colnames(raw_data) <- c("ID", "gender", "age", "race", "bmi", "hdl", "ldl", "triglyceride", "insulin", "glucose", "bp_systolic","bp_diastolic", "waist","lifestyle", "education", "married", "depression", "sleep", "diabetes") 
  
+ contrasts(raw_data$diabetes)
  levels(raw_data$diabetes)[1] <- "yes"
  levels(raw_data$diabetes)[2] <- "no"
+  contrasts(raw_data$diabetes)
+  
+## write.csv(raw_data, "final_data.csv")
 ```
+# EDA
+
+## Summary statistics
+
+```{r}
+#st_options(plain.ascii = FALSE,       
+#           style = "rmarkdown", 
+#           dfSummary.silent = TRUE,        
+#           footnote = NA,          
+#           subtitle.emphasis = FALSE)      
+
+dfSummary(raw_data[,-1], valid.col = FALSE)
+
+raw_data <- raw_data[-c(7:10)]
+```
+
 ------------------------------------------------------------------------
-Training data:
+Training data: NEW (5/7)
 
 ```{r}
 # Missing data omitted
-diabetes_data <- na.omit(raw_data)
+diabetes_data <- na.omit(raw_data) %>% 
+  filter(married!="99") %>% 
+  filter(married!="77") %>% 
+  filter(education!="7") %>% 
+  filter(education!="9") %>% 
+  droplevels()
+
+summary(diabetes_data)
 
 set.seed(1)
 trainRows <- createDataPartition(diabetes_data$diabetes, p = 0.8, list = FALSE)
 
 
 # training data
-x <- diabetes_data[trainRows ,-c(1, 19)]
+x <- diabetes_data[trainRows ,-c(1, 15)]
+xtree <- diabetes_data[trainRows ,-1]
 y <- diabetes_data$diabetes[trainRows]
 
 # test data
-x2 <- diabetes_data[-trainRows ,-c(1, 19)]
+x2 <- diabetes_data[-trainRows ,-c(1, 15)]
 y2 <- diabetes_data$diabetes[-trainRows]
+
 ```
 
 ```{r testing, eval=FALSE}
@@ -105,67 +135,17 @@ mid_eda = mid_naomit %>%
 ```
 
 
-```{r hw 4 and 5 code chunks}
-## HW 3 CV trees
-data("Prostate")
-dat = Prostate %>% na.omit()
+```{r code chunks}
+ctrl <- trainControl(method = "cv")
 
 set.seed(1)
-tree1 = rpart(formula = lpsa ~ . , 
-               data = dat,
-               control = rpart.control(cp = 0.01))
-
-rpart.plot(tree1)
-printcp(tree1)
-
-# minimum cross-validation error
-cpTable = tree1$cptable
-minErr = which.min(cpTable[,4])
-
-tree2 = prune(tree1, cp = cpTable[minErr,1])
-rpart.plot(tree2)
-plot(as.party(tree2))
-summary(tree2)
-tree2$cptable
-
-## 1SE rule tree
-tree3 = prune(tree1, cp = cpTable[cpTable[,4]<cpTable[minErr,4]+cpTable[minErr,5],1][1])
-rpart.plot(tree3)
-plot(as.party(tree3))
-summary(tree3)
-tree3$cptable
-
-## more cv error codes
-juice$Purchase = factor(juice$Purchase, c("CH", "MM"))
-
-
-jtrain = createDataPartition(y = juice$Purchase,
-                                p = 800/1070,
-                                list = FALSE)
-
-set.seed(1)
-ojtree1 = rpart(formula = Purchase ~ . , 
-              data = juice,
-              subset = jtrain,
-              control = rpart.control(cp = 0.01))
-
-rpart.plot(ojtree1)
-printcp(ojtree1)
-
-# minimum cross-validation error
-cpTable = ojtree1$cptable
-minErr = which.min(cpTable[,4])
-
-ojtree2 = prune(ojtree1, cp = cpTable[minErr,1])
-rpart.plot(ojtree2)
-plot(as.party(ojtree2))
-summary(ojtree2)
-ojtree2$cptable
-
-oj_pred = predict(ojtree1, newdata = juice[-jtrain,], type = "prob")[,1]
-
-oj_test_pred = rep("MM", length(oj_pred))
-oj_test_pred[oj_pred>0.5] = "CH"
+rpart.fit <- train(diabetes ~ . , 
+                   diabetes_data[trainRows,-1], 
+                   method = "rpart",
+                   tuneGrid = data.frame(cp = exp(seq(-1,10, length = 500))),
+                   trControl = ctrl)
+ggplot(rpart.fit, highlight = TRUE)
+rpart.plot(rpart.fit$finalModel)
 
 cvconf = confusionMatrix(data = as.factor(oj_test_pred),
                 reference = juice$Purchase[-jtrain],
@@ -173,38 +153,10 @@ cvconf = confusionMatrix(data = as.factor(oj_test_pred),
 
 cverr = ((cvconf$table[1,2]+cvconf$table[2,1])/(cvconf$table[1,1]+cvconf$table[1,2]+cvconf$table[2,1]+cvconf$table[2,2]))
 
+```
 
-
-## Bagging - like random forest but mtry is set to max
-set.seed(1)
-bagging = randomForest(lpsa ~ . , 
-                        dat,
-                        mtry = 8)
-
-bag_vals = bagging$importance
-
-
-## random forest
-set.seed(1)
-rf = randomForest(lpsa ~ . , 
-                   dat,
-                   mtry = 2)
-
-rf_vals=rf$importance
-
-rf_grid = expand.grid(mtry = 1:8,
-                       splitrule = "variance",
-                       min.node.size = 1:6)
-
+```{r}
 ## random forest in caret
-set.seed(1)
-rf_fit = train(lpsa ~ . , 
-                dat, 
-                method = "ranger",
-                tuneGrid = rf_grid,
-                trControl = ctrl)
-
-## more random forest codes
 ctrl = trainControl(method = "cv",
                      classProbs = TRUE, 
                      summaryFunction = twoClassSummary)
@@ -214,55 +166,48 @@ rf_grid = expand.grid(mtry = 1:17,
                        min.node.size = seq(from = 2, to = 10, by = 2))
 
 set.seed(1)
-rf_class = train(Purchase ~ . , 
-                juice, 
-                subset = jtrain,
-                method = "ranger",
-                tuneGrid = rf_grid,
-                metric = "ROC",
-                trControl = ctrl)
+rf_fit = train(diabetes ~ . ,
+               diabetes_data[trainRows,-1], 
+               method = "ranger",
+               tuneGrid = rf_grid,
+               metric = "ROC",
+               trControl = ctrl)
 
-ggplot(rf_class, highlight = TRUE)
+ggplot(rf_fit, highlight = TRUE)
+
 
 set.seed(1)
-rfclass_final = ranger(Purchase ~ . , 
-                        juice[jtrain,],
-                        mtry = rf_class$bestTune[[1]], 
-                        min.node.size = rf_class$bestTune[[3]],
-                        importance = "permutation",
-                        scale.permutation.importance = TRUE) 
+rf_final = ranger(diabetes ~ . ,
+                     diabetes_data[trainRows,-1],
+                     mtry = rf_fit$bestTune[[1]],
+                     min.node.size = rf_fit$bestTune[[3]],
+                     importance = "permutation",
+                     scale.permutation.importance = TRUE) 
 
-rf_table=rfclass_final$variable.importance
+rf_table=rf_final$variable.importance
+rf_final$prediction.error
 
-rfclass_pred = predict(rfclass_final, data = juice[-jtrain,], type = "response")$predictions
+rfclass_pred = predict(rf_final, data = diabetes_data[-trainRows,-1], type = "response")$predictions
 
 rfconf = confusionMatrix(data = as.factor(rfclass_pred),
-                reference = juice$Purchase[-jtrain],
-                positive = "CH")
+                reference = y2,
+                positive = "yes")
 
 rf_err = (rfconf$table[1,2]+rfconf$table[2,1])/(rfconf$table[1,1]+rfconf$table[1,2]+rfconf$table[2,1]+rfconf$table[2,2])
+```
 
-## Boosting
-set.seed(1)
-boost = gbm(lpsa ~ . , 
-           dat,
-           distribution = "gaussian",
-           n.trees = 5000, 
-           interaction.depth = 4,
-           shrinkage = 0.005,
-           cv.folds = 10, 
-           n.cores = 5)
-gbm.perf(boost, method = "cv")
 
+```{r}
 gbm_grid = expand.grid(n.trees = c(0,1000,2000,3000,4000,5000,6000),
                         interaction.depth = 1:4,
                         shrinkage = c(0.001,0.003,0.005),
                         n.minobsinnode = c(1,10))
 
-ctrl = trainControl(method = "cv") 
+ctrl = trainControl(method = "cv")
+                    
 set.seed(1)
-gbm_fit = train(lpsa ~ . , 
-                 dat, 
+gbm_fit = train(diabetes ~ . , 
+                 xtree, 
                  method = "gbm",
                  tuneGrid = gbm_grid,
                  trControl = ctrl,
@@ -270,90 +215,94 @@ gbm_fit = train(lpsa ~ . ,
 
 ggplot(gbm_fit, highlight = TRUE)
 
-summary(gbm_fit$finalModel)
+#summary(gbm_fit$finalModel)
+gbm_pred <- predict(gbm_fit, newdata = diabetes_data[-trainRows,], type = "prob")[,1]
+gbm_test_pred = rep("no", length(gbm_pred))
+gbm_test_pred[gbm_pred>0.5] = "yes"
 
-## more boosting codes
-gbm_grid = expand.grid(n.trees = c(0,2000,4000,6000),
-                        interaction.depth = 1:4,
-                        shrinkage = c(0.001,0.003,0.005),
-                        n.minobsinnode = c(1,10))
+gbmconf = confusionMatrix(data = as.factor(gbm_test_pred),
+                reference = diabetes_data$diabetes[-trainRows],
+                positive = "yes")
 
-ctrl2 = trainControl(method = "cv") 
+gbmconf$table
+
+gbm_err = (gbmconf$table[1,2]+gbmconf$table[2,1])/(gbmconf$table[1,1]+gbmconf$table[1,2]+gbmconf$table[2,1]+gbmconf$table[2,2])
+
+gbmA_grid <- expand.grid(n.trees = c(2000,3000,4000),
+                         interaction.depth = 1:6,
+                         shrinkage = c(0.001,0.003,0.005),
+                         n.minobsinnode = 1)
+
+ctrl = trainControl(method = "cv",
+                    classProbs = TRUE)
+
 set.seed(1)
-gbm2_fit = train(Purchase ~ . , 
-                 juice, 
-                subset = jtrain,
-                 method = "gbm",
-                 tuneGrid = gbm_grid,
-                 trControl = ctrl2,
-                 verbose = FALSE)
+gbmA_fit <- train(diabetes ~ . , 
+                  diabetes_data, 
+                  subset = trainRows, 
+                  tuneGrid = gbmA_grid,
+                  trControl = ctrl,
+                  method = "gbm",
+                  distribution = "adaboost",
+                  metric = "ROC",
+                  verbose = FALSE)
 
-ggplot(gbm2_fit, highlight = TRUE)
+ggplot(gbmA_fit, highlight = TRUE)
 
-summary(gbm2_fit$finalModel)
+gbmA_pred <- predict(gbmA_fit, newdata = diabetes_data[-trainRows,], type = "prob")[,1]
+gbmA_test_pred = rep("no", length(gbmA_pred))
+gbmA_test_pred[gbmA_pred>0.5] = "yes"
 
-gbm2_pred = predict(gbm2_fit, newdata = juice[-jtrain,], type = "prob")[,1]
+gbmAconf = confusionMatrix(data = as.factor(gbmA_test_pred),
+                reference = diabetes_data$diabetes[-trainRows],
+                positive = "yes")
 
-gbm2_test_pred = rep("MM", length(gbm2_pred))
-gbm2_test_pred[gbm2_pred>0.5] = "CH"
+gbmAconf$table
 
-bstconf = confusionMatrix(data = as.factor(gbm2_test_pred),
-                reference = juice$Purchase[-jtrain],
-                positive = "CH")
-
-bstconf$table
-
-bst_err = (bstconf$table[1,2]+bstconf$table[2,1])/(bstconf$table[1,1]+bstconf$table[1,2]+bstconf$table[2,1]+bstconf$table[2,2])
+gbmA_err = (gbmAconf$table[1,2]+gbmAconf$table[2,1])/(gbmAconf$table[1,1]+gbmAconf$table[1,2]+gbmAconf$table[2,1]+gbmAconf$table[2,2])
+```
 
 
-## linear kernels
+```{r svml}
+ctrl <- trainControl(method = "cv")
+
+# kernlab
 set.seed(1)
-linear_tune = tune.svm(Purchase ~ . , 
-                        juice, 
-                        data = juice[jtrain,],
-                        kernel = "linear", 
-                        cost = exp(seq(-4,4,len=50)),
-                        scale = TRUE)
-plot(linear_tune)
+svml.fit <- train(diabetes ~ . , 
+                  data = diabetes_data[trainRows,], 
+                  method = "svmLinear",
+                  preProcess = c("center", "scale"),
+                  tuneGrid = data.frame(C = exp(seq(-4,4,len=20))),
+                  trControl = ctrl)
 
-#linear_tune$best.parameters
-lintrain_err = linear_tune$best.performance 
+#plot(svml.fit, highlight = TRUE, xTrans = log)
 
-best_linear = linear_tune$best.model
+pred.svml <- predict(svml.fit, newdata = diabetes_data[-trainRows,])
 
-pred_linear = predict(best_linear, newdata = juice[-jtrain,])
+confusionMatrix(data = pred.svml, 
+                reference = diabetes_data$diabetes[-trainRows])
+```
 
-lin_conf = confusionMatrix(data = pred_linear, 
-                reference = juice$Purchase[-jtrain])
+```{r svmr}
+svmr.grid <- expand.grid(C = exp(seq(-1,4,len=10)),
+                         sigma = exp(seq(-8,0,len=10)))
 
-lin_err = (lin_conf$table[1,2]+lin_conf$table[2,1])/(lin_conf$table[1,1]+lin_conf$table[1,2]+lin_conf$table[2,1]+lin_conf$table[2,2])
+# tunes over both cost and sigma
+set.seed(1)             
+svmr.fit <- train(diabetes ~ . , 
+                  diabetes_data, 
+                  subset = trainRows,
+                  method = "svmRadialSigma",
+                  preProcess = c("center", "scale"),
+                  tuneGrid = svmr.grid,
+                  trControl = ctrl)
 
-#lin_err
+#plot(svmr.fit, highlight = TRUE)
 
+pred.svmr <- predict(svmr.fit, newdata = diabetes_data[-trainRows,])
 
-## radial kernels
-set.seed(1)
-radial_tune = tune.svm(Purchase ~ . , 
-                        data = juice[jtrain,], 
-                        kernel = "radial", 
-                        cost = exp(seq(-4,4,len=10)),
-                        gamma = exp(seq(-6,-2,len=10)))
-
-plot(radial_tune, transform.y = log, transform.x = log, 
-     color.palette = terrain.colors)
-# summary(radial_tune)
-
-best_radial = radial_tune$best.model
-#summary(best_radial)
-radtrain_err = radial_tune$best.performance
-
-pred_radial = predict(best_radial, newdata = juice[-jtrain,])
-
-rad_conf = confusionMatrix(data = pred_radial, 
-                reference = juice$Purchase[-jtrain])
-
-rad_err = (rad_conf$table[1,2]+rad_conf$table[2,1])/(rad_conf$table[1,1]+rad_conf$table[1,2]+rad_conf$table[2,1]+rad_conf$table[2,2])
-
+confusionMatrix(data = pred.svmr, 
+                reference = diabetes_data$diabetes[-trainRows])
 ```
 
 
