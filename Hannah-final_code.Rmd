@@ -42,13 +42,6 @@ library(scales)
 library(pROC)
 #library(MASS) 
 #library(klaR)
-library(forcats)
-library(visdat)
-library(glmnet)
-library(mlbench)
-library(pROC)
-library(pdp)
-library(vip)
 ```
 
 # Load Data
@@ -99,7 +92,6 @@ st_options(plain.ascii = FALSE,
 
 dfSummary(raw_data[,-1], valid.col = FALSE)
 
-# Delete high missing-data covariates
 raw_data <- raw_data[-c(7:10)]
 dfSummary(raw_data[,-1], valid.col = FALSE)
 ```
@@ -168,7 +160,7 @@ diabetes_married = ggplot(raw_data,
 (diabetes_gender + diabetes_race)  / (diabetes_education + diabetes_married) 
 ```
 
-## Partition-plots
+## Partition plots
 
 ```{r}
 set.seed(1)
@@ -178,30 +170,24 @@ rowTrain <- createDataPartition(y = raw_data$diabetes,
 
 # Exploratory analysis: LDA/QDA/NB based on every combination of two variables
 
-# klaR::partimat(diabetes ~ age + bmi +  hdl + bp_systolic + waist, 
-#        data = raw_data, subset = rowTrain, method = "lda")
-
-# klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
-#         data = raw_data, subset = rowTrain, method = "qda")
+klaR::partimat(diabetes ~ age + bmi +  hdl + bp_systolic + waist, 
+         data = raw_data, subset = rowTrain, method = "lda")
 
 klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
+         data = raw_data, subset = rowTrain, method = "qda")
+
+ klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
           data = raw_data, subset = rowTrain, method = "naiveBayes")
 ```
 
+
 # Models
 
-## Prep/partition data
+## training data
 
 ```{r}
-# Omit Missing data
+# Missing data omitted
 diabetes_data <- na.omit(raw_data)
-
-# Omit low-count subcategories
-diabetes_data <- na.omit(diabetes_data) %>%
-  filter(married != "77") %>%
-  filter(education != "7") %>%
-  filter(education != "9") %>%
-  droplevels()
 
 set.seed(1)
 trainRows <- createDataPartition(diabetes_data$diabetes, p = 0.8, list = FALSE)
@@ -214,70 +200,15 @@ y <- diabetes_data$diabetes[trainRows]
 # test data
 x2 <- diabetes_data[-trainRows ,-c(1, 15)]
 y2 <- diabetes_data$diabetes[-trainRows]
-
-# Setup CV method
-ctrl <- trainControl(method = "cv",
-                     summaryFunction = twoClassSummary,
-                     classProbs = TRUE)
-```
-
-## Linear models
-
-```{r}
-# glm
-set.seed(1)
-
-model.glm <- train(x = x, 
-                   y = y,
-                   method = "glm",
-                   metric = "ROC",
-                   trControl = ctrl)
-
-# glm.pred <- predict(model.glm, newdata = x2, type = "prob")[,2]
-# roc.glm <- roc(y2, glm.pred)
-# plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
-# plot(smooth(roc.glm), col = 4, add = TRUE)
-
-# Penalized Logistic regression
-glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 6),
-                        .lambda = exp(seq(-8, -2, length = 10)))
-set.seed(1)
-
-model.glmn <- train(x = data.matrix(x),
-                    y = y,
-                    method = "glmnet",
-                    tuneGrid = glmnGrid,
-                    metric = "ROC",
-                    trControl = ctrl)
-
-plot(model.glmn, xTrans = function(x)log(x))   
-
-model.glmn$bestTune
-
-# glmn.pred <- predict(model.glmn, newdata = data.matrix(x2), type = "prob")[,2]
-# roc.glmn <- roc(y2, glmn.pred)
-# plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
-# plot(smooth(roc.glmn), col = 4, add = TRUE)
-
-# LDA
-# set.seed(1)
-
-# model.lda <- train(x = data.matrix(x),
-#                   y = y,
-#                   method = "lda",
-#                   metric = "ROC",
-#                   trControl = ctrl)
-
-# lda.pred <- predict(model.lda, newdata = data.matrix(x2), type = "prob") [,2]
-
-# roc.lda <- roc(y2, lda.pred)
-# plot(roc.lda, legacy.axes = TRUE, print.auc = TRUE)
-# plot(smooth(roc.lda), col = 4, add = TRUE)
 ```
 
 ## Nonlinear models
 
 ```{r}
+ctrl <- trainControl(method = "cv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+
 ## Non-linear Logistic regression: GAM, MARS
 # GAM
 #set.seed(1)
@@ -291,7 +222,6 @@ model.glmn$bestTune
 
 # MARS
 set.seed(1)
-
 model.mars <- train(x = x,
                     y = y,
                     method = "earth",
@@ -330,17 +260,12 @@ model.nb <- train(x = x,
 plot(model.nb)
 ```
 
-## trees/ SVM
-
+## 
 
 ## Model comparison
 
 ```{r}
-res <- resamples(list(GLM = model.glm, 
-                      GLMNET = model.glmn, 
-                      MARS = model.mars, 
-                      NB = model.nb))
-
+res <- resamples(list(MARS = model.mars, NB = model.nb))
 summary(res)
 ```
 

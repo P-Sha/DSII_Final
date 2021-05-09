@@ -100,7 +100,7 @@ raw_data <- raw_data[raw_data$DIQ010 != 3 & raw_data$DIQ010 != 7 & raw_data$DIQ0
 
 # EDA
 
-Exploratory data analysis was performed using density plots and bar graphs. Summary statistics were analyzed for all variables, to get an overview of the data and check for extent of missing values. Density plots were used to check for relationships between diabetes and other numeric variables. Categorical variables were visualized separately, using bar graphs instead. 
+Exploratory data analysis was performed for all 18 initial variables, including the outcome of response, using density plots and bar graphs. Summary statistics were analyzed for all variables, to get an overview of the data and check for extent of missing values. Density plots were used to check for relationships between diabetes and other numeric variables. Categorical variables were visualized separately, using bar graphs instead. 
 
 ## summary statistics
 
@@ -140,7 +140,7 @@ featurePlot(x = raw_data[, 6:14],
             auto.key = list(columns = 2))
 ```
 
-Density plots of several numeric covariates showed differences in distributions of the two classes. Plots of systolic blood pressure, waist circumference measurement, age, and body mass index seemed significantly different between those with diabetes and those without. Most significant difference seemed to be among different age groups, with density curve of responses with no diabetes showing right-skewness, and those with diabetes skewed to the left along with a strong shift towards higher age. 
+Density plots of several numeric covariates showed differences in distributions of the two classes. Plots of systolic blood pressure, waist circumference measurement, age, and body mass index seemed significantly different between those with diabetes and those without. Most significant difference seemed to be among different age groups, with a density curve of responses with no diabetes showing right-skewness, and those with diabetes skewed to the left along with a strong shift towards higher age. 
 
 ## Bar plots
 
@@ -184,7 +184,7 @@ diabetes_married = ggplot(raw_data,
 (diabetes_gender + diabetes_race)  / (diabetes_education + diabetes_married) 
 ```
 
-Bar plots were analyzed for categorical variables gender, race ,education level, and marital status. Presence of diabetes did not seem to be gender-dependent, and with slight differences based on education level. Proportion of positive diabetes cases did seem to vary among different races, and based on marital status. There seemed to be significantly higher proportion of non-diabetics among individuals who were never-married or divorced.
+Bar plots were analyzed for categorical variables gender, race ,education level, and marital status. Presence of diabetes did not seem to be gender-dependent, and with slight differences based on education level. Proportion of positive diabetes cases did seem to vary among different races, and based on marital status. There seemed to be a significantly higher proportion of non-diabetics among individuals who were never-married or divorced.
 
 Finally, paired partition plots were also examined for several variables using training data, to analyze misclassification rate. Methods using linear discriminant analysis, and non-linear boundaries such as quadratic discriminant analysis and Naive Bayes method were used, giving similar results in terms of error rates. Shown below is partition plots using Naive Bayes method for paired visuals on age, bmi, hdl, systolic blood pressure, and waist.
 
@@ -210,7 +210,7 @@ rowTrain <- createDataPartition(y = raw_data$diabetes,
 
 ## Missing data
 
- The four Variables with high proportion of missing data, most of which were close to 70%  were removed. For the remaining variables with missing values, most were close to 25%, except martial status, education and depression level, which were approximately 40% missing. Assuming that the data was missing at random, and that single imputation might lead to bias and might not preserve relationships between variables; for those reasons imputation was not considered and the missing values were removed. The final sample consisted of 4,246 participants, still a fairly large dataset.
+ The four Variables with high proportions of missing data, most of which were close to 70%,  were removed. For the remaining variables with missing values, most were close to 25%, except marital status, education and depression level, which were approximately 40% missing. Assuming that the data was missing at random, and that single imputation might lead to bias and might not preserve relationships between variables; for those reasons imputation was not considered and the missing values were removed. The final sample consisted of 4,246 participants, still a fairly large dataset.
 
 ```{r}
 # Missing data omitted
@@ -241,16 +241,33 @@ Due to ease of interpretability and the binary nature of the outcome, glm (logis
 
 Generalized additive model (GAM) was considered but not used due to the length of time for its execution. Non-linear MARS model, with similar performance to GAM, was retained. Various combinations for tuning grid were tried to get its optimal performance.    
 
-While no assumptions are needed for the predictors in linear logistic model, for discriminant analysis it is assumed that the predictors follow a normal  distribution within each group of response, and that the variance-covariance matrix for response classes are the same for linear model (LDA), or could be different for non-linear QDA. Since four of the covariates in the dataset were categorical, these models were tried but excluded from analysis. Under the assumption that features are independent within each class, Naives Bayes method (NB) was used due to its ability to handle mixed covariates, and due to its slightly better performance than LDA and QDA in terms of area under the ROC (receiver operating charactersitic curve).
+While no assumptions are needed for the predictors in linear logistic model, for discriminant analysis it is assumed that the predictors follow a normal  distribution within each group of response, and that the variance-covariance matrix for response classes are the same for linear model (LDA), or could be different for non-linear QDA. Since four of the covariates in the dataset were categorical, these models were tried but excluded from analysis, also for the fact that these models work well for well-separated classes which was not apparent in the EDA. Under the assumption that features are independent within each class, Naives Bayes method (NB) was used due to its ability to handle mixed covariates, and due to its slightly better performance than LDA and QDA in terms of area under the ROC (receiver operating characteristic curve).
+
+Models using non-parametric approach such as trees were also fitted using ensemble methods, which help improve prediction accuracy. Wisdom of crowds (bagging and random forest), and wisdom of weighted crowds of experts (Boosting) were the ensemble methods used. 
+
+---------------- ensemble model details -----------------------
+
+Lastly, support vector classifiers were also fitted, with linear and non-linear decision boundaries. 
+
+---------------- about SVM modeling -----------------------
+
 
 ## Model comparison
+- resmaples code
+-output (table, graphical)
+-analysis
 
 ## Final model
+-visual
+-equation (?if exists)
+-explanation
 
 ## Model prediction performance
+-training/test output
+-variables of importance in prediction
 
 ## Limitations
-
+- ... of the models used
 
 # Conclusion
 
