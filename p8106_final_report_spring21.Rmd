@@ -34,10 +34,21 @@ library(ggplot2)
 library(patchwork)
 library(mgcv)
 library(nlme)
+library(plyr)
+library(dplyr)
 library(AppliedPredictiveModeling)
 library(dplyr)
 library(scales)
 library(pROC)
+#library(MASS) 
+#library(klaR)
+library(forcats)
+library(visdat)
+library(glmnet)
+library(mlbench)
+library(pROC)
+library(pdp)
+library(vip)
 ```
 
 # Introduction
@@ -144,7 +155,7 @@ Density plots of several numeric covariates showed differences in distributions 
 
 ## Bar plots
 
-```{r}
+```{r, fig.show ='hide'}
 diabetes_gender = ggplot(raw_data, 
        aes(x = diabetes, 
            fill = factor(gender,
@@ -184,7 +195,7 @@ diabetes_married = ggplot(raw_data,
 (diabetes_gender + diabetes_race)  / (diabetes_education + diabetes_married) 
 ```
 
-Bar plots were analyzed for categorical variables gender, race ,education level, and marital status. Presence of diabetes did not seem to be gender-dependent, and with slight differences based on education level. Proportion of positive diabetes cases did seem to vary among different races, and based on marital status. There seemed to be a significantly higher proportion of non-diabetics among individuals who were never-married or divorced.
+Bar plots, not shown, were analyzed for categorical variables gender, race ,education level, and marital status. Presence of diabetes did not seem to be gender-dependent, and with slight differences based on education level. Proportion of positive diabetes cases did seem to vary among different races, and based on marital status. There seemed to be a significantly higher proportion of non-diabetics among individuals who were never-married or divorced.
 
 Finally, paired partition plots were also examined for several variables using training data, to analyze misclassification rate. Methods using linear discriminant analysis, and non-linear boundaries such as quadratic discriminant analysis and Naive Bayes method were used, giving similar results in terms of error rates. Shown below is partition plots using Naive Bayes method for paired visuals on age, bmi, hdl, systolic blood pressure, and waist.
 
@@ -216,6 +227,13 @@ rowTrain <- createDataPartition(y = raw_data$diabetes,
 # Missing data omitted
 diabetes_data <- na.omit(raw_data)
 
+# Omit low-count subcategories
+diabetes_data <- na.omit(diabetes_data) %>%
+  filter(married != "77") %>%
+  filter(education != "7") %>%
+  filter(education != "9") %>%
+  droplevels()
+
 set.seed(1)
 trainRows <- createDataPartition(diabetes_data$diabetes, p = 0.8, list = FALSE)
 
@@ -227,11 +245,74 @@ y <- diabetes_data$diabetes[trainRows]
 # test data
 x2 <- diabetes_data[-trainRows ,-c(1, 15)]
 y2 <- diabetes_data$diabetes[-trainRows]
+
+# Setup CV method
+ctrl <- trainControl(method = "cv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
 ```
 
 # Models
 
 ## Methods
+
+```{r}
+# LINEAR
+## glm
+set.seed(1)
+
+model.glm <- train(x = x, 
+                   y = y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+## Penalized Logistic regression
+glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 6),
+                        .lambda = exp(seq(-8, -2, length = 10)))
+set.seed(1)
+
+model.glmn <- train(x = data.matrix(x),
+                    y = y,
+                    method = "glmnet",
+                    tuneGrid = glmnGrid,
+                    metric = "ROC",
+                    trControl = ctrl)
+
+# NON-LINEAR
+## MARS
+set.seed(1)
+
+model.mars <- train(x = x,
+                    y = y,
+                    method = "earth",
+                    tuneGrid = expand.grid(degree = 1:3, 
+                                           nprune = 2:15),
+                    metric = "ROC",
+                    trControl = ctrl)
+
+## NB
+set.seed(1)
+
+nbGrid <- expand.grid(usekernel = c(FALSE,TRUE),
+                      fL = 1, 
+                      adjust = seq(.2, 2.5, by = .2))
+
+model.nb <- train(x = x,
+                  y = y,
+                  method = "nb",
+                  tuneGrid = nbGrid,
+                  metric = "ROC",
+                  trControl = ctrl)
+
+# Tree-based ENSEMBLE
+
+
+# SVM
+
+
+```
+
 
 Several model-building techniques were used to predict the risk of diabetes using the 15 variables associated with it. Gender, age, race, bmi, hdl, systolic and diastolic blood pressure, waist circumference, lifestyle, education, marital status, depression and sleep were used as the predictor variables in the model building process. Given that the outcome was binary, generalized linear and non-linear methods such as logistic regression and discriminant analysis were tried, along with ensemble methods for trees, and the SVM (support vector machines) linear and non-linear boundary methods. 
 
@@ -251,10 +332,21 @@ Lastly, support vector classifiers were also fitted, with linear and non-linear 
 
 ---------------- about SVM modeling -----------------------
 
+Neural networks were not considered due to their blackbox approach, which would result in non-transparency.
+
 
 ## Model comparison
-- resmaples code
--output (table, graphical)
+
+```{r}
+res <- resamples(list(GLM = model.glm, 
+                      GLMNET = model.glmn, 
+                      MARS = model.mars, 
+                      NB = model.nb))
+
+summary(res)
+bwplot(res, metric = "ROC")
+```
+
 -analysis
 
 ## Final model
@@ -267,9 +359,11 @@ Lastly, support vector classifiers were also fitted, with linear and non-linear 
 -variables of importance in prediction
 
 ## Limitations
-- ... of the models used
+ The models were limited in their accuracy due to the imbalance of the dataset.A larger dataset would have been needed to correct the skewness of class distribution, by including a greater range of data time-periods. Additionally, including greater set of covariates of potential influence, such as work conditions, exposure to environmental pollutants, etc. would also have helped to formulate a more precise model. Another limitation of models were that only the complete cases were used in the building process, under the assumption that data was missing at random. That might not have been the case for all missing data, for example the body weight data for participants who had limb amputations were set to missing. This factor was not a part of this data. Finally, extremely small sample sizes in several subcategories, which had to be excluded, were not handled well by the models.  
 
 # Conclusion
-
+- findings
+- are findings what was expected?
+- The data included both type and type 2 diabetes records without segregating the two types. It was unfortunate to realize that the age distinctions between the two forms of the disease are disappearing; what was known as adult-onset diabetes can begin during childhood. 
 
 

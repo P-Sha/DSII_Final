@@ -1,6 +1,6 @@
 ---
-title: "Diabetes Prediction model" 
-author: "DS II Final team"
+title: "Final" 
+author: "Hannah Rosenblum"
 output:
   pdf_document:
     toc: yes
@@ -18,33 +18,31 @@ header-includes:
 --- 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = 'asis')
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
+
 
 \newpage
 
 ```{r}
+library(NHANES)
 library(RNHANES)
 library(tidyverse)
 library(summarytools)
-library(leaps)
-library(readr)
+library(forcats)
+library(visdat)
 library(caret)
-library(ggplot2)
-library(patchwork)
-library(mgcv)
-library(nlme)
-library(dplyr)
-library(plyr)
-library(AppliedPredictiveModeling)
-library(dplyr)
-library(scales)
+library(glmnet)
+library(mlbench)
 library(pROC)
-#library(MASS) 
-#library(klaR)
+library(pdp)
+library(vip)
+library(AppliedPredictiveModeling)
+
+set.seed(1)
 ```
 
-# Load Data
+# Data 
 
 ```{r}
 data_files <- nhanes_load_data(file_name = "DIQ_H", year = "2013-2014")
@@ -60,137 +58,36 @@ data_files <- data_files %>%
   left_join(nhanes_load_data("PAQ_H", "2013-2014"), by = "SEQN") %>% 
   left_join(nhanes_load_data("DPQ_H", "2013-2014"), by = "SEQN") %>% 
   left_join(nhanes_load_data("SLQ_H", "2013-2014"), by = "SEQN")
-  
 
 raw_data <- data_files %>% 
-  select(SEQN, RIAGENDR, RIDAGEYR, RIDRETH3, BMXBMI, LBDHDD, LBDLDL, LBXTR, LBXIN, LBXGLT, BPXSY1, BPXDI1, BMXWAIST,  PAD680, DMDEDUC2, DMDMARTL, DPQ020, SLD010H,  DIQ010) 
+  select(SEQN, RIAGENDR, RIDAGEYR, RIDRETH3, BMXBMI, LBDHDD, BPXSY1, BPXDI1, BMXWAIST,  PAD680, DMDEDUC2, DMDMARTL, DPQ020, SLD010H,  DIQ010) 
 
 raw_data <- raw_data[raw_data$DIQ010 != 3 & raw_data$DIQ010 != 7 & raw_data$DIQ010 != 9, ] %>%  mutate(RIAGENDR = as_factor(RIAGENDR), RIDRETH3 = as_factor(RIDRETH3),DMDEDUC2 = as_factor(DMDEDUC2), DMDMARTL = as_factor(DMDMARTL), DIQ010 = as_factor(DIQ010) ) %>% 
   drop_na(DIQ010) 
  
- colnames(raw_data) <- c("ID", "gender", "age", "race", "bmi", "hdl", "ldl", "triglyceride", "insulin", "glucose", "bp_systolic","bp_diastolic", "waist","lifestyle", "education", "married", "depression", "sleep", "diabetes") 
+ colnames(raw_data) <- c("ID", "gender", "age", "race", "bmi", "hdl", "bp_systolic","bp_diastolic", "waist","lifestyle", "education", "married", "depression", "sleep", "diabetes") 
  
- contrasts(raw_data$diabetes)
- levels(raw_data$diabetes)[1] <- "yes"
  levels(raw_data$diabetes)[2] <- "no"
-  contrasts(raw_data$diabetes)
-  
-write.csv(raw_data, "final_data.csv")
+ levels(raw_data$diabetes)[1] <- "yes"
+ 
 ```
 
-
-# EDA
-
-## Summary statistics
-
-```{r}
-st_options(plain.ascii = FALSE,       
-           style = "rmarkdown", 
-           dfSummary.silent = TRUE,        
-           footnote = NA,          
-           subtitle.emphasis = FALSE)      
-
-dfSummary(raw_data[,-1], valid.col = FALSE)
-
-raw_data <- raw_data[-c(7:10)]
-dfSummary(raw_data[,-1], valid.col = FALSE)
-```
-
-## Density plots (numerical covariates)
-
-```{r, fig.height=4}
-
-theme1 <- transparentTheme(trans = .4)
-trellis.par.set(theme1)
-
-raw_data <- raw_data %>% 
-  select(married, everything()) %>% 
-  select(education, everything()) %>% 
-  select(race, everything()) %>% 
-  select(gender, everything()) %>% 
-  select(ID, everything())
-
-featurePlot(x = raw_data[, 6:14], 
-            y = raw_data$diabetes,
-            scales = list(x = list(relation = "free"), 
-                          y = list(relation = "free")),
-            plot = "density", pch = "|", 
-            auto.key = list(columns = 2))
-```
-
-## Bar plots (categorical covariates)
-
-```{r}
-diabetes_gender = ggplot(raw_data, 
-       aes(x = diabetes, 
-           fill = factor(gender,
-                         levels = c("1", "2"),
-                         labels = c("male", "female")))) + 
-  geom_bar(position = position_dodge(preserve = "single")) +
-   scale_fill_brewer(palette = "Set2") +
-  labs(fill = "gender")
-
-diabetes_race = ggplot(raw_data, 
-       aes(x = diabetes, 
-           fill = factor(race,
-                         levels = c("1", "2", "3", "4", "6", "7"),
-                         labels = c("Mexican American", "Other Hispanic", "White", "Black", "Asian", "Other")))) + 
-  geom_bar(position = position_dodge(preserve = "single")) +
-   scale_fill_brewer(palette = "Set2") +
-   labs(fill = "race")
-
-diabetes_education = ggplot(raw_data, 
-       aes(x = diabetes, 
-           fill = factor(education,
-                         levels = c("1", "2", "3", "4", "5"),
-                         labels = c("< 9th grade", "9 - 11 grade", "H.S./GED", "Some college", "College graduate")))) + 
-  geom_bar(position = position_dodge(preserve = "single")) +
-   scale_fill_brewer(palette = "Set2") +
-   labs(fill = "education")
-
-diabetes_married = ggplot(raw_data, 
-       aes(x = diabetes, 
-           fill = factor(married,
-                         levels = c("1", "2", "3", "4", "5", "6"),
-                         labels = c("Married", "Widowed", "Divorced", "Separated", "Never married", "Living with partner")))) + 
-  geom_bar(position = position_dodge(preserve = "single")) +
-   scale_fill_brewer(palette = "Set2") +
-    labs(fill = "married")
-
-(diabetes_gender + diabetes_race)  / (diabetes_education + diabetes_married) 
-```
-
-## Partition plots
-
-```{r}
-set.seed(1)
-rowTrain <- createDataPartition(y = raw_data$diabetes,
-                                p = 0.7,
-                                list = FALSE)
-
-# Exploratory analysis: LDA/QDA/NB based on every combination of two variables
-
-klaR::partimat(diabetes ~ age + bmi +  hdl + bp_systolic + waist, 
-         data = raw_data, subset = rowTrain, method = "lda")
-
-klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
-         data = raw_data, subset = rowTrain, method = "qda")
-
- klaR::partimat(diabetes ~ age + bmi + hdl  + bp_systolic + waist, 
-          data = raw_data, subset = rowTrain, method = "naiveBayes")
-```
-
-
-# Models
-
-## training data
+------------------------------------------------------------------------
+Training data:
 
 ```{r}
 # Missing data omitted
-diabetes_data <- na.omit(raw_data)
+diabetes_data <- na.omit(raw_data) %>%
+  filter(married != "77") %>%
+  filter(education != "7") %>%
+  filter(education != "9") %>%
+  droplevels()
+
 
 set.seed(1)
 trainRows <- createDataPartition(diabetes_data$diabetes, p = 0.8, list = FALSE)
+
+
 
 
 # training data
@@ -201,72 +98,100 @@ y <- diabetes_data$diabetes[trainRows]
 x2 <- diabetes_data[-trainRows ,-c(1, 15)]
 y2 <- diabetes_data$diabetes[-trainRows]
 ```
+----------------------------------------------------------------------------
 
-## Nonlinear models
+
+#Perform exploratory data analysis (e.g., scatter plots of response vs. predictors).
+```{r, fig.height=8}
+vis_miss(raw_data[,-1])
+
+st_options(plain.ascii = FALSE,       
+           style = "rmarkdown", 
+           dfSummary.silent = TRUE,        
+           footnote = NA,          
+           subtitle.emphasis = FALSE)      
+
+dfSummary(raw_data[,-1])
+
+dfSummary(diabetes_data[,-1])
+
+
+theme1 <- transparentTheme(trans = .4)
+trellis.par.set(theme1)
+
+featurePlot(x = diabetes_data[, 2:18], 
+            y = diabetes_data$diabetes,
+            scales = list(x = list(relation = "free"), 
+                          y = list(relation = "free")),
+            plot = "density", pch = "|", 
+            auto.key = list(columns = 2))
+
+```
+
+## glm
 
 ```{r}
 ctrl <- trainControl(method = "cv",
                      summaryFunction = twoClassSummary,
                      classProbs = TRUE)
-
-## Non-linear Logistic regression: GAM, MARS
-# GAM
-#set.seed(1)
-#model.gam <- train(x = x,
-#                   y = y,
-#                   method = "gam",
-#                   metric = "ROC",
-#                   trControl = ctrl)
-
-#model.gam$finalModel
-
-# MARS
 set.seed(1)
-model.mars <- train(x = x,
-                    y = y,
-                    method = "earth",
-                    tuneGrid = expand.grid(degree = 1:3, 
-                                           nprune = 2:15),
+
+model.glm <- train(x, y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+glm.pred <- predict(model.glm, newdata = x2, type = "prob")[,2]
+
+
+roc.glm <- roc(y2, glm.pred)
+plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glm), col = 4, add = TRUE)
+
+```
+
+## Penalized logistic regression
+
+```{r}
+glmnGrid <- expand.grid(.alpha = seq(0, 1, length = 6),
+                        .lambda = exp(seq(-8, -2, length = 10)))
+set.seed(1)
+model.glmn <- train(x = data.matrix(x),
+                   y,
+                    method = "glmnet",
+                    tuneGrid = glmnGrid,
                     metric = "ROC",
                     trControl = ctrl)
 
-plot(model.mars)
+plot(model.glmn, xTrans = function(x) log(x))   
 
-coef(model.mars$finalModel) 
+model.glmn$bestTune
 
-## Non-linear Discriminant analysis: QDA, Naive Bayes (NB)
-# QDA = for continuous features
-#set.seed(1)
-#model.qda <- train(x = x,
-#                   y = y,
-#                   method = "qda",
-#                   metric = "ROC",
-#                   trControl = ctrl)
+glmn.pred <- predict(model.glmn, newdata = data.matrix(x2), type = "prob")[,2]
 
-# NB
-set.seed(1)
 
-nbGrid <- expand.grid(usekernel = c(FALSE,TRUE),
-                      fL = 1, 
-                      adjust = seq(.2, 2.5, by = .2))
+roc.glmn <- roc(y2, glmn.pred)
+plot(roc.glmn, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glmn), col = 4, add = TRUE)
 
-model.nb <- train(x = x,
-                  y = y,
-                  method = "nb",
-                  tuneGrid = nbGrid,
-                  metric = "ROC",
-                  trControl = ctrl)
-
-plot(model.nb)
 ```
 
-## 
-
-## Model comparison
-
+## LDA
 ```{r}
-res <- resamples(list(MARS = model.mars, NB = model.nb))
-summary(res)
+ctrl <- trainControl(method = "cv",
+                     summaryFunction = twoClassSummary,
+                     classProbs = TRUE)
+
+set.seed(1)
+model.lda <- train(x = data.matrix(x),
+                   y,
+                   method = "lda",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+lda.pred <- predict(model.lda, newdata = data.matrix(x2), type = "prob") [,2]
+
+roc.lda <- roc(y2, lda.pred)
+plot(roc.lda, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.lda), col = 4, add = TRUE)
 ```
-
-
