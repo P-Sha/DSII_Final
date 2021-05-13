@@ -34,8 +34,8 @@ library(ggplot2)
 library(patchwork)
 library(mgcv)
 library(nlme)
-library(plyr)
 library(dplyr)
+library(plyr)
 library(AppliedPredictiveModeling)
 library(dplyr)
 library(scales)
@@ -49,6 +49,12 @@ library(mlbench)
 library(pROC)
 library(pdp)
 library(vip)
+library(rpart.plot)
+library(ranger)
+library(randomForest) 
+library(gbm)
+library(e1071) 	
+library(kernlab) 	
 ```
 
 # Introduction
@@ -256,6 +262,13 @@ ctrl <- trainControl(method = "cv",
 
 ## Methods
 
+Given a fairly large sample size the data was partitioned into train and test for prediction accuracy analysis, with 80% to 20% split. Several model-building techniques were used to predict the risk of diabetes using the 15 variables associated with it. Gender, age, race, bmi, hdl, systolic and diastolic blood pressure, waist circumference, lifestyle, education, marital status, depression and sleep were used as the predictor variables in the model building process. Given that the outcome was binary, generalized linear and non-linear methods such as logistic regression and discriminant analysis were tried, along with ensemble methods for trees, and the SVM (support vector machines) linear and non-linear boundary methods. For comparability of cross-validation performance, all models were fitted using the `caret` package. Built-in 10-fold cross validation method was used to get the area under the curves for comparisons, along with the summary statistics of performances on training data. 
+ 
+
+Due to ease of interpretability and the binary nature of the outcome, glm (logistic regression) and penalized logistic regression models were fitted to assess linear decision boundaries. Various combinations of the two tuning parameters were tried for the penalized logistic model to find the specific values that worked well for the given data. Generalized additive model (GAM) was considered but not used due to the length of time for its execution. Non-linear MARS model, with similar performance to GAM, was retained. Various combinations for tuning grid were tried to get its optimal performance.    
+
+While no assumptions are needed for the predictors in linear logistic model, for discriminant analysis it is assumed that the predictors follow a normal  distribution within each group of response, and that the variance-covariance matrix for response classes are the same for linear model (LDA), or could be different for non-linear QDA. Since four of the covariates in the dataset were categorical, these models were tried but excluded from analysis, also for the fact that these models work well for well-separated classes which was not apparent in the EDA. Under the assumption that features are independent within each class, Naives Bayes method (NB) was used due to its ability to handle mixed covariates, and due to its slightly better performance than LDA and QDA in terms of area under the ROC (receiver operating characteristic curve).
+
 ```{r}
 # LINEAR
 ## glm
@@ -306,32 +319,43 @@ model.nb <- train(x = x,
                   trControl = ctrl)
 
 # Tree-based ENSEMBLE
+## Adaboost
+gbmA_grid <- expand.grid(n.trees = c(2000,3000,4000),
+                         interaction.depth = 1:6,
+                         shrinkage = c(0.001,0.003,0.005),
+                         n.minobsinnode = 1)
 
+set.seed(1)
 
-# SVM
+gbmA.fit <- train(diabetes ~ . , 
+                  diabetes_data, 
+                  subset = trainRows, 
+                  tuneGrid = gbmA_grid,
+                  trControl = ctrl,
+                  method = "gbm",
+                  distribution = "adaboost",
+                  metric = "ROC",
+                  verbose = FALSE)
 
+ggplot(gbmA.fit, highlight = TRUE) +
+  labs(title = "AdaBoost")
+
+# SVML
+set.seed(1)
+
+svml.fit <- train(diabetes ~ . , 
+                  data = diabetes_data[trainRows,], 
+                  method = "svmLinear2",
+                  tuneGrid = data.frame(cost = exp(seq(0,2,len = 100))),
+                  metric = "ROC",
+                  trControl = ctrl)
 
 ```
 
 
-Several model-building techniques were used to predict the risk of diabetes using the 15 variables associated with it. Gender, age, race, bmi, hdl, systolic and diastolic blood pressure, waist circumference, lifestyle, education, marital status, depression and sleep were used as the predictor variables in the model building process. Given that the outcome was binary, generalized linear and non-linear methods such as logistic regression and discriminant analysis were tried, along with ensemble methods for trees, and the SVM (support vector machines) linear and non-linear boundary methods. 
+Models using non-parametric approach such as trees were also fitted using ensemble methods, which help improve prediction accuracy. Wisdom of crowds (bagging and random forest), and wisdom of weighted crowds of experts (Boosting) were the ensemble methods used. Single trees were not considered due to lack of predictive accuracy when compared to ensemble approach.  For a single tree, a small change in data could cause a significant amount of change in the final estimated tree. For those reasons, it was left out. Random forest, bagging, boosting, and weighted boosting using `adaboost` were tried. Boosting model using `adaboost`, which minimizes the  exponential loss function, was retained among the ensemble models due to its relatively better performance.   
 
-Due to ease of interpretability and the binary nature of the outcome, glm (logistic regression) and penalized logistic regression models were fitted.
-
--------------- GLM/Penalized model building  -----------------------------
-
-Generalized additive model (GAM) was considered but not used due to the length of time for its execution. Non-linear MARS model, with similar performance to GAM, was retained. Various combinations for tuning grid were tried to get its optimal performance.    
-
-While no assumptions are needed for the predictors in linear logistic model, for discriminant analysis it is assumed that the predictors follow a normal  distribution within each group of response, and that the variance-covariance matrix for response classes are the same for linear model (LDA), or could be different for non-linear QDA. Since four of the covariates in the dataset were categorical, these models were tried but excluded from analysis, also for the fact that these models work well for well-separated classes which was not apparent in the EDA. Under the assumption that features are independent within each class, Naives Bayes method (NB) was used due to its ability to handle mixed covariates, and due to its slightly better performance than LDA and QDA in terms of area under the ROC (receiver operating characteristic curve).
-
-Models using non-parametric approach such as trees were also fitted using ensemble methods, which help improve prediction accuracy. Wisdom of crowds (bagging and random forest), and wisdom of weighted crowds of experts (Boosting) were the ensemble methods used. 
-
----------------- ensemble model details -----------------------
-
-Lastly, support vector classifiers were also fitted, with linear and non-linear decision boundaries. 
-
----------------- about SVM modeling -----------------------
-
+Lastly, support vector classifiers were also fitted, with linear and non-linear decision boundaries. Tuning grids were finalized after analyzing outputs of several combinations. The two models were compared using the ROC curve as a metric, with similar results. Nonlinear model was fitted using both the tuning parameters, giving a two-dimensional tuning grid. For that reason, a simpler linear model was selected for further comparison, considering the time of execution also as a deciding factor between the two models. Initially built using `kernlab` package, with predicted class probabilities requested the model iterations were showing as a part of the output. Using the `e1071` library instead to run the svm linear model corrected the problem.       
 Neural networks were not considered due to their blackbox approach, which would result in non-transparency.
 
 
@@ -341,29 +365,94 @@ Neural networks were not considered due to their blackbox approach, which would 
 res <- resamples(list(GLM = model.glm, 
                       GLMNET = model.glmn, 
                       MARS = model.mars, 
-                      NB = model.nb))
+                      NB = model.nb,
+                      gbmA = gbmA.fit,
+                      svml = svml.fit))
 
-summary(res)
+#summary(res)
 bwplot(res, metric = "ROC")
 ```
 
--analysis
+Comparing the models, their summary and boxplots showed that GLM model gave the highest median of 0.828 for ROC, a characteristic for evaluating performance based on sensitivity and specificity of a model at different thresholds for classification of response. Although the mean was marginally higher for `adaboost` model, simpler model was selected as the final model for ease of interpretability and as a better fit for a noisy data. Support vector machine linear model had the worst performance when compared to the other five final models. Based on these resampling comparisons and using ROC as our metric for model selection, GLM was chosen as the final model, and its prediction performance was then evaluated on test data.
 
-## Final model
--visual
--equation (?if exists)
--explanation
+## Final model: GLM
+
+```{r, results='markup'}
+# glm
+set.seed(1)
+
+model.glm <- train(x = x, 
+                   y = y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+summary(model.glm)
+```
+
+Summary statistics of the model shows age, hdl, waist and education level of college versus below 9th grade as highly significant predictors of diabetes. Gender, race being American whites versus Mexicans, bmi, diastolic blood-pressure, and education level in general are also shown as significant predictors at 5% significance level. For instance, having attended college versus only up to 9th grade education level, changes the log odds of not having diabetes by 0.87, or by 2.4 times.
+
+Model:
+
+log(odds of no diabetes)= = 7.926 - 0.34 female - 0.049 age + 0.47 white + 0.065 bmi + 0.027 hdl + 0.011 diastolic - 0.0667 waist + 0.548 High_School+ 0.484 Some_college + 0.866 College_graduate + 0.8 living_with_partner - 0.0347 sleep        
+
 
 ## Model prediction performance
--training/test output
--variables of importance in prediction
+
+```{r, results='markup'}
+# glm
+set.seed(1)
+
+model.glm <- train(x = x, 
+                   y = y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+## Test data classification performance: confusion matrix at 0.5 cut-off
+test.pred.prob <- predict(model.glm, newdata = x2,
+                           type = "prob")[,2]
+test.pred <- rep("yes", length(test.pred.prob))
+test.pred[test.pred.prob > 0.5] <- "no"
+
+confusionMatrix(data = as.factor(test.pred),
+                reference = diabetes_data$diabetes[-trainRows],
+                positive = "no")
+```
+
+Based on the confusion matrix at 0.5 threshold level, the accuracy of the model was 0.8762, which was same in value to "No Information Rate". This indicates that the classification was not that meaningful at the selected level of 0.5 threshold.  `Kappa`, which accounts for agreement by chance between observed and predicted classification, was also low at 0.1769 indicating that the probability of agreement could be by chance and not necessarily due to correct predictions. 
+
+To further analyze prediction performance at other threshold cutoffs, ROC curve with range of threshold values between 0 and 1 was plotted. 
+
+```{r}
+set.seed(1)
+
+model.glm <- train(x = x, 
+                   y = y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+## Test data performance: ROC curve
+glm.pred <- predict(model.glm, newdata = x2, type = "prob")[,2]
+roc.glm <- roc(y2, glm.pred)
+plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glm), col = 4, add = TRUE)
+```
+
+The high area under the curve at 0.842 indicates that the model seemed to perform well on classifying the test data for the given dataset. 
 
 ## Limitations
- The models were limited in their accuracy due to the imbalance of the dataset.A larger dataset would have been needed to correct the skewness of class distribution, by including a greater range of data time-periods. Additionally, including greater set of covariates of potential influence, such as work conditions, exposure to environmental pollutants, etc. would also have helped to formulate a more precise model. Another limitation of models were that only the complete cases were used in the building process, under the assumption that data was missing at random. That might not have been the case for all missing data, for example the body weight data for participants who had limb amputations were set to missing. This factor was not a part of this data. Finally, extremely small sample sizes in several subcategories, which had to be excluded, were not handled well by the models.  
+ The models were limited in their accuracy due to the imbalance of the dataset.A larger dataset would have been needed to correct the skewness of class distribution, by including a greater range of data time-periods. Additionally, including greater set of covariates of potential influence, such as work conditions, exposure to environmental pollutants, etc. would also have helped to formulate a more precise model. Another limitation of models were that only the complete cases were used in the building process, under the assumption that data was missing at random. That might not have been the case for all missing data, for example the body weight data for participants who had limb amputations were set to missing. This factor was not a part of this data. Finally, extremely small sample sizes in several subcategories, which had to be excluded, were not handled well by the models. 
 
 # Conclusion
-- findings
-- are findings what was expected?
-- The data included both type and type 2 diabetes records without segregating the two types. It was unfortunate to realize that the age distinctions between the two forms of the disease are disappearing; what was known as adult-onset diabetes can begin during childhood. 
+For the given dataset, the final model selected performed fairly well in predicting the test-data responses, when evaluated based on area under the ROC curve. The findings were in support of the expectation that simple linear models do well with noisy data, which could be the issue with epidemiological data. A lot more laboratory data was missing than expected and the surveys were based on recollection, which could have lead to recall bias and under-reporting. These factors could have been the cause of noisy data that the other models were unable to account for properly.    
+
+ The data included both type 1 and type 2 diabetes records without segregating the two groups. It was unfortunate to realize that the age distinctions between the two forms of the disease are disappearing; what was known as adult-onset diabetes can begin during childhood.  
+ 
+ Significant association between diabetes and age, waist circumference as an indicator of weight, diastolic blood pressure and high density lipids was as expected, which has been a well-documented fact at this point. Relevance of college education and marital status were unexpected.
+ 
+ There is high rate of missingness in epidemiological studies and surveys than would be expected, making any inferences and predictions to be drawn from them tricky at best. This dataset showed that sometimes more involved and complicated models do not always mean a better model, a critical element to remember when model building and analyzing data from a study.
+ 
 
 

@@ -18,7 +18,7 @@ header-includes:
 --- 
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE, results = 'asis')
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE)
 ```
 
 \newpage
@@ -51,6 +51,10 @@ library(pdp)
 library(vip)
 library(rpart.plot)
 library(ranger)
+library(randomForest) 
+library(gbm)
+library(e1071) 	
+library(kernlab) 
 ```
 
 # Load Data
@@ -298,13 +302,13 @@ model.mars <- train(x = x,
                     y = y,
                     method = "earth",
                     tuneGrid = expand.grid(degree = 1:3, 
-                                           nprune = 2:15),
+                                           nprune = 2:20),
                     metric = "ROC",
                     trControl = ctrl)
 
 plot(model.mars)
 
-coef(model.mars$finalModel) 
+#coef(model.mars$finalModel) 
 
 ## Non-linear Discriminant analysis: QDA, Naive Bayes (NB)
 # QDA = for continuous features
@@ -436,14 +440,12 @@ ggplot(gbmA.fit, highlight = TRUE)
 
 
 ## SVML/R
-#ctrl <- trainControl(method = "cv")
-# kernlab
+# e1071
 set.seed(1)
 svml.fit <- train(diabetes ~ . , 
                   data = diabetes_data[trainRows,], 
-                  method = "svmLinear",
-                  #preProcess = c("center", "scale"),
-                  tuneGrid = data.frame(C = exp(seq(0,2,len = 100))),
+                  method = "svmLinear2",
+                  tuneGrid = data.frame(cost = exp(seq(0,2,len = 100))),
                   metric = "ROC",
                   trControl = ctrl)
 plot(svml.fit, highlight = TRUE, xTrans = log)
@@ -491,6 +493,51 @@ res <- resamples(list(GLM = model.glm,
 
 summary(res)
 bwplot(res, metric = "ROC")
+```
+
+## Final model
+
+
+```{r}
+# glm
+set.seed(1)
+
+model.glm <- train(x = x, 
+                   y = y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+summary(model.glm)
+```
+
+### Model prediction performance 
+
+```{r}
+# glm
+set.seed(1)
+
+model.glm <- train(x = x, 
+                   y = y,
+                   method = "glm",
+                   metric = "ROC",
+                   trControl = ctrl)
+
+## Test data classification performance: confusion matrix at 0.5 cut-off
+test.pred.prob <- predict(model.glm, newdata = x2,
+                           type = "prob")[,2]
+test.pred <- rep("yes", length(test.pred.prob))
+test.pred[test.pred.prob > 0.5] <- "no"
+
+confusionMatrix(data = as.factor(test.pred),
+                reference = diabetes_data$diabetes[-trainRows],
+                positive = "no")
+
+## Test data performance: ROC curve
+glm.pred <- predict(model.glm, newdata = x2, type = "prob")[,2]
+roc.glm <- roc(y2, glm.pred)
+plot(roc.glm, legacy.axes = TRUE, print.auc = TRUE)
+plot(smooth(roc.glm), col = 4, add = TRUE)
 ```
 
 
